@@ -18,6 +18,23 @@ def test_zero_mv():
     zero_mv = np.mgrid[:128:me.block_size, :128:me.block_size].transpose(1, 2, 0)
     assert (mv == zero_mv).all()
 
+def test_mv():
+    ref = np.zeros((32, 32), dtype=np.uint8)
+    ref[6,7] = 164
+    me = pyme.ESA(ref, search_range=16)
+
+    cur = np.zeros((32, 32), dtype=np.uint8)
+    cur[1,1] = 88
+    cur[19,21] = 203
+    mv = me.estimate(cur)
+
+    expected_mv = np.array([
+        [[5,  6], [0, 16]],
+        [[16, 0], [3,  2]],
+    ])
+
+    assert (mv == expected_mv).all()
+
 def test_small_ref_img():
     ref = np.zeros((8, 8), dtype=np.uint8)
     me = pyme.ESA(ref, search_range=16)
