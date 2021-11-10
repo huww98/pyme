@@ -102,8 +102,7 @@ class me_method {
     }
 
     bool p_ref_vaild(std::ptrdiff_t x, std::ptrdiff_t y) {
-        return x >= 0 && y >= 0 &&
-            x < ref_shape()[0] && y < ref_shape()[1];
+        return x >= 0 && y >= 0 && x < ref_shape()[0] && y < ref_shape()[1];
     }
 
     std::array<std::ptrdiff_t, 2> ref_max_cmp() {
@@ -116,8 +115,7 @@ class me_method {
 
     bool p_ref_vaild_cmp(std::ptrdiff_t x, std::ptrdiff_t y) {
         auto m = ref_max_cmp();
-        return x >= 0 && y >= 0 &&
-            x < m[0] && y < m[1];
+        return x >= 0 && y >= 0 && x < m[0] && y < m[1];
     }
 
     TPixel *p_ref(std::size_t x, std::size_t y) {
@@ -163,8 +161,8 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
             };
             auto max_search = this->ref_max_cmp();
             std::array<std::ptrdiff_t, 2> b_max {
-                std::min(x_ref + r, max_search[0]),
-                std::min(y_ref + r, max_search[1]),
+                std::min(x_ref + r + 1, max_search[0]),
+                std::min(y_ref + r + 1, max_search[1]),
             };
             uint64_t cost_min = std::numeric_limits<uint64_t>::max();
             if (this->p_ref_vaild_cmp(x_ref, y_ref)) {
