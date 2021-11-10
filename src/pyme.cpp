@@ -144,7 +144,13 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
                 std::min(x + this->search_range, max_search[0]),
                 std::min(y + this->search_range, max_search[1]),
             };
-            uint64_t cost_min = std::numeric_limits<uint64_t>::max();
+            uint64_t cost_min = this->cmp_sad(this->p_ref(x, y), p_cur, cur_info.strides[0]);
+            if (cost_min == 0) {
+                p_mv[0] = x;
+                p_mv[1] = y;
+                return;
+            }
+
             for (std::size_t i = b_min[0]; i < b_max[0]; i++) {
                 for (std::size_t j = b_min[1]; j < b_max[1]; j++) {
                     auto cost = this->cmp_sad(this->p_ref(i, j), p_cur, cur_info.strides[0]);
