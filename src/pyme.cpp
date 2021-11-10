@@ -46,8 +46,8 @@ class me_method {
 
     std::array<std::size_t, 2> num_blocks(const py::buffer_info &info) {
         return {
-            (info.shape[0] - blocking_offset[0]) / BLOCK_SIZE,
-            (info.shape[1] - blocking_offset[1]) / BLOCK_SIZE,
+            info.shape[0] / BLOCK_SIZE,
+            info.shape[1] / BLOCK_SIZE,
         };
     }
 
@@ -79,9 +79,9 @@ class me_method {
     template<typename TBlock>
     void for_each_block(const py::buffer_info &cur_info, const py::buffer_info &mv_info, TBlock block) {
         char *p_mv_0 = static_cast<char *>(mv_info.ptr);
-        for (std::size_t i = blocking_offset[0]; i <= cur_info.shape[0] - BLOCK_SIZE; i += BLOCK_SIZE) {
+        for (std::size_t i = 0; i <= cur_info.shape[0] - BLOCK_SIZE; i += BLOCK_SIZE) {
             auto p_mv_1 = p_mv_0;
-            for (std::size_t j = blocking_offset[1]; j <= cur_info.shape[1] - BLOCK_SIZE; j += BLOCK_SIZE) {
+            for (std::size_t j = 0; j <= cur_info.shape[1] - BLOCK_SIZE; j += BLOCK_SIZE) {
                 block(i, j, reinterpret_cast<int *>(p_mv_1));
 
                 p_mv_1 += mv_info.strides[1];
@@ -109,7 +109,6 @@ class me_method {
     std::size_t ref_linesize;
 
   public:
-    std::array<std::size_t, 2> blocking_offset = {0, 0};
     const std::array<std::size_t, 2> &ref_shape() { return _ref_shape; }
     std::array<std::size_t, 2> num_blocks(py::buffer f) {
         return this->num_blocks(f.request());
@@ -173,7 +172,6 @@ PYBIND11_MODULE(_C, m) {
     auto py_esa = py::class_<esa<>>(m, "ESA")
         .def_readonly_static("block_size", &esa<>::block_size)
         .def(py::init<py::buffer, std::size_t>(), py::arg("ref_frame"), py::arg("search_range"))
-        .def_readwrite("blocking_offset", &esa<>::blocking_offset)
         .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks))
         .def("estimate", &esa<>::estimate, py::arg("cur_frame"), py::arg("mv"));
 }
