@@ -44,7 +44,7 @@ class me_method {
         }
     }
 
-    std::array<std::size_t, 2> nr_blocks(const py::buffer_info &info) {
+    std::array<std::size_t, 2> num_blocks(const py::buffer_info &info) {
         return {
             (info.shape[0] - blocking_offset[0]) / BLOCK_SIZE,
             (info.shape[1] - blocking_offset[1]) / BLOCK_SIZE,
@@ -53,7 +53,7 @@ class me_method {
 
     void check_current_frame(const py::buffer_info &cur_info, const py::buffer_info &mv_info) {
         check_frame(cur_info, "cur_frame");
-        auto nr_blocks = this->nr_blocks(cur_info);
+        auto nr_blocks = this->num_blocks(cur_info);
         if (static_cast<std::size_t>(mv_info.shape[0]) != nr_blocks[0] ||
                 static_cast<std::size_t>(mv_info.shape[1]) != nr_blocks[1] ||
                 mv_info.shape[2] != 2) {
@@ -109,6 +109,9 @@ class me_method {
   public:
     std::array<std::size_t, 2> blocking_offset = {0, 0};
     const std::array<std::size_t, 2> &ref_shape() { return _ref_shape; }
+    std::array<std::size_t, 2> num_blocks(py::buffer f) {
+        return this->num_blocks(f.request());
+    }
 };
 
 template<typename TPixel=std::uint8_t, std::size_t BLOCK_SIZE=16>
@@ -162,5 +165,6 @@ PYBIND11_MODULE(_C, m) {
     auto py_esa = py::class_<esa<>>(m, "ESA")
         .def(py::init<py::buffer, std::size_t>(), py::arg("ref_frame"), py::arg("search_range"))
         .def_readwrite("blocking_offset", &esa<>::blocking_offset)
+        .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks))
         .def("estimate", &esa<>::estimate, py::arg("cur_frame"), py::arg("mv"));
 }
