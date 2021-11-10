@@ -1,10 +1,13 @@
-from setuptools import setup, Extension
+from setuptools import setup
+
+from pybind11.setup_helpers import Pybind11Extension
 
 __version__ = "0.0.1"
 
 ext_modules = [
-    Extension("pyme._C",
+    Pybind11Extension("pyme._C",
         ["src/pyme.cpp"],
+        extra_compile_args=['-std=c++17']
     ),
 ]
 
