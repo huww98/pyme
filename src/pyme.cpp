@@ -51,7 +51,7 @@ class me_method {
         };
     }
 
-    void check_current_frame(const py::buffer_info &cur_info, const py::buffer_info &mv_info) {
+    void check_current_frame(const py::buffer_info &cur_info, const py::buffer_info &mv_info, const py::buffer_info &cost_info) {
         check_frame(cur_info, "cur_frame");
         if (mv_info.ndim != 3)
             throw std::runtime_error("mv should have 3 dim");
@@ -74,22 +74,42 @@ class me_method {
             ss << "mv should have stride[2] == " << mv_stride << ", but got " << mv_info.strides[2];
             throw std::runtime_error(ss.str());
         }
+
+        if (cost_info.ndim != 2)
+            throw std::runtime_error("cost should have 2 dim");
+        if (static_cast<std::size_t>(cost_info.shape[0]) != nr_blocks[0] ||
+                static_cast<std::size_t>(cost_info.shape[1]) != nr_blocks[1]) {
+            std::stringstream ss;
+            ss << "expected cost shape (" << nr_blocks[0] << ", " << nr_blocks[1] << "), "
+                  "but got (" << cost_info.shape[0] << ", " << cost_info.shape[1] << ")";
+            throw std::runtime_error(ss.str());
+        }
+        auto cost_format = py::format_descriptor<uint64_t>::format();
+        if (cost_info.format != cost_format) {
+            throw std::runtime_error("cost should have format " + cost_format);
+        }
     }
 
     template<typename TBlock>
-    void for_each_block(const py::buffer_info &cur_info, const py::buffer_info &mv_info, TBlock block) {
+    void for_each_block(const py::buffer_info &cur_info, const py::buffer_info &mv_info, const py::buffer_info &cost_info, TBlock block) {
         constexpr auto B = static_cast<std::ptrdiff_t>(BLOCK_SIZE);
         char *p_mv_0 = static_cast<char *>(mv_info.ptr);
+        char *p_cost_0 = static_cast<char *>(cost_info.ptr);
         for (std::ptrdiff_t i = 0; i <= cur_info.shape[0] - B; i += B) {
             auto p_mv_1 = p_mv_0;
+            auto p_cost_1 = p_cost_0;
             for (std::ptrdiff_t j = 0; j <= cur_info.shape[1] - B; j += B) {
                 auto p_mv = reinterpret_cast<int *>(p_mv_1);
+                auto p_cost = reinterpret_cast<uint64_t *>(p_cost_1);
                 p_mv[0] = p_mv[1] = -1;
-                block(i, j, p_mv);
+                *p_cost = std::numeric_limits<uint64_t>::max();
+                block(i, j, p_mv, *p_cost);
 
                 p_mv_1 += mv_info.strides[1];
+                p_cost_1 += cost_info.strides[1];
             }
             p_mv_0 += mv_info.strides[0];
+            p_cost_0 += cost_info.strides[0];
         }
     }
 
@@ -144,12 +164,13 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
         : base(ref_frame), search_range(search_range), ref_offset(ref_offset) {
     }
 
-    void estimate(py::buffer cur_frame, py::buffer mv) {
+    void estimate(py::buffer cur_frame, py::buffer mv, py::buffer cost) {
         auto cur_info = cur_frame.request();
         auto mv_info = mv.request(true);
-        base::check_current_frame(cur_info, mv_info);
+        auto cost_info = cost.request(true);
+        base::check_current_frame(cur_info, mv_info, cost_info);
 
-        this->for_each_block(cur_info, mv_info, [&](std::size_t x, std::size_t y, int *p_mv) {
+        this->for_each_block(cur_info, mv_info, cost_info, [&](std::size_t x, std::size_t y, int *p_mv, uint64_t &cost) {
             auto cur_linesize = cur_info.strides[0] / sizeof(TPixel);
             TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_linesize + y;
             std::ptrdiff_t x_ref = x + this->ref_offset[0];
@@ -164,10 +185,9 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
                 std::min(x_ref + r + 1, max_search[0]),
                 std::min(y_ref + r + 1, max_search[1]),
             };
-            uint64_t cost_min = std::numeric_limits<uint64_t>::max();
             if (this->p_ref_vaild_cmp(x_ref, y_ref)) {
-                cost_min = this->cmp_sad(this->p_ref(x_ref, y_ref), p_cur, cur_linesize);
-                if (cost_min == 0) {
+                cost = this->cmp_sad(this->p_ref(x_ref, y_ref), p_cur, cur_linesize);
+                if (cost == 0) {
                     p_mv[0] = x_ref;
                     p_mv[1] = y_ref;
                     return;
@@ -176,9 +196,9 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
 
             for (auto i = b_min[0]; i < b_max[0]; i++) {
                 for (auto j = b_min[1]; j < b_max[1]; j++) {
-                    auto cost = this->cmp_sad(this->p_ref(i, j), p_cur, cur_linesize);
-                    if (cost < cost_min) {
-                        cost_min = cost;
+                    auto c = this->cmp_sad(this->p_ref(i, j), p_cur, cur_linesize);
+                    if (c < cost) {
+                        cost = c;
                         p_mv[0] = i;
                         p_mv[1] = j;
                     }
@@ -199,5 +219,5 @@ PYBIND11_MODULE(_C, m) {
         .def(py::init<py::buffer, std::size_t, std::array<std::ptrdiff_t, 2>>(),
             py::arg("ref_frame"), py::arg("search_range"), py::arg("ref_offset")=std::array<std::ptrdiff_t, 2>{0,0})
         .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks), py::arg("frame"))
-        .def("estimate", &esa<>::estimate, py::arg("cur_frame"), py::arg("mv"));
+        .def("estimate", &esa<>::estimate, py::arg("cur_frame"), py::arg("mv"), py::arg("cost"));
 }
