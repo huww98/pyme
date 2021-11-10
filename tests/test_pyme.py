@@ -2,6 +2,9 @@ import numpy as np
 
 import pyme
 
+def test_block_size():
+    assert pyme.ESA.block_size == 16
+
 def test_num_blocks():
     f = np.empty((128, 128), dtype=np.uint8)
     me = pyme.ESA(f, search_range=16)

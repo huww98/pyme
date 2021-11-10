@@ -28,6 +28,8 @@ class me_method {
         ref_linesize = ref_info.strides[0];
     }
 
+    static constexpr auto block_size = BLOCK_SIZE;
+
   protected:
     static void check_frame(const py::buffer_info &info, const std::string &name) {
         check_dim(info, name);
@@ -163,6 +165,7 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
 
 PYBIND11_MODULE(_C, m) {
     auto py_esa = py::class_<esa<>>(m, "ESA")
+        .def_readonly_static("block_size", &esa<>::block_size)
         .def(py::init<py::buffer, std::size_t>(), py::arg("ref_frame"), py::arg("search_range"))
         .def_readwrite("blocking_offset", &esa<>::blocking_offset)
         .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks))
