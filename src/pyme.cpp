@@ -10,11 +10,6 @@ namespace py = pybind11;
 
 namespace {
 
-void check_dim(const py::buffer_info &info, const std::string &name) {
-    if (info.ndim != 2)
-        throw std::runtime_error(name + " should have 2 dim");
-}
-
 template<typename TPixel=std::uint8_t, std::size_t BLOCK_SIZE=16>
 class me_method {
   public:
@@ -25,23 +20,26 @@ class me_method {
         ref_data = static_cast<TPixel *>(ref_info.ptr);
         _ref_shape[0] = ref_info.shape[0];
         _ref_shape[1] = ref_info.shape[1];
-        ref_linesize = ref_info.strides[0];
+        ref_linesize = ref_info.strides[0] / sizeof(TPixel);
+        assert(ref_linesize * sizeof(TPixel) == ref_info.strides[0]);
     }
 
     static constexpr auto block_size = BLOCK_SIZE;
 
   protected:
     static void check_frame(const py::buffer_info &info, const std::string &name) {
-        check_dim(info, name);
+        if (info.ndim != 2)
+            throw std::runtime_error(name + " should have 2 dim");
         auto pixel_format = py::format_descriptor<TPixel>::format();
         if (info.format != pixel_format) {
             std::stringstream ss;
             ss << name << " should have format " << pixel_format;
             throw std::runtime_error(ss.str());
         }
-        if (info.strides[1] != 1) {
+        py::ssize_t pix_stride = sizeof(TPixel);
+        if (info.strides[1] != pix_stride) {
             std::stringstream ss;
-            ss << name << " should have stride[1] == 1, but got " << info.strides[1];
+            ss << name << " should have stride[1] == " << pix_stride << ", but got " << info.strides[1];
             throw std::runtime_error(ss.str());
         }
     }
@@ -55,6 +53,8 @@ class me_method {
 
     void check_current_frame(const py::buffer_info &cur_info, const py::buffer_info &mv_info) {
         check_frame(cur_info, "cur_frame");
+        if (mv_info.ndim != 3)
+            throw std::runtime_error("mv should have 3 dim");
         auto nr_blocks = this->num_blocks(cur_info);
         if (static_cast<std::size_t>(mv_info.shape[0]) != nr_blocks[0] ||
                 static_cast<std::size_t>(mv_info.shape[1]) != nr_blocks[1] ||
@@ -68,25 +68,25 @@ class me_method {
         if (mv_info.format != mv_format) {
             throw std::runtime_error("mv should have format " + mv_format);
         }
-        if (mv_info.strides[2] != 1) {
+        py::ssize_t mv_stride = sizeof(int);
+        if (mv_info.strides[2] != mv_stride) {
             std::stringstream ss;
-            ss << "mv should have stride[2] == 1, but got " << mv_info.strides[1];
+            ss << "mv should have stride[2] == " << mv_stride << ", but got " << mv_info.strides[2];
             throw std::runtime_error(ss.str());
         }
     }
 
     template<typename TBlock>
     void for_each_block(const py::buffer_info &cur_info, const py::buffer_info &mv_info, TBlock block) {
-        int *p_mv_0 = static_cast<int *>(mv_info.ptr);
+        char *p_mv_0 = static_cast<char *>(mv_info.ptr);
         for (std::size_t i = blocking_offset[0]; i <= cur_info.shape[0] - BLOCK_SIZE; i += BLOCK_SIZE) {
-            p_mv_0 += mv_info.strides[0];
-
             auto p_mv_1 = p_mv_0;
             for (std::size_t j = blocking_offset[1]; j <= cur_info.shape[1] - BLOCK_SIZE; j += BLOCK_SIZE) {
-                p_mv_1 += mv_info.strides[1];
+                block(i, j, reinterpret_cast<int *>(p_mv_1));
 
-                block(i, j, p_mv_1);
+                p_mv_1 += mv_info.strides[1];
             }
+            p_mv_0 += mv_info.strides[0];
         }
     }
 
@@ -137,8 +137,8 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
         this->for_each_block(cur_info, mv_info, [&](std::size_t x, std::size_t y, int *p_mv) {
             TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_info.strides[0] + y;
             std::array<std::size_t, 2> b_min {
-                std::max(x - this->search_range, static_cast<std::size_t>(0)),
-                std::max(y - this->search_range, static_cast<std::size_t>(0)),
+                x <= this->search_range ? 0 : x - this->search_range,
+                y <= this->search_range ? 0 : y - this->search_range,
             };
             std::array<std::size_t, 2> b_max {
                 std::min(x + this->search_range, max_search[0]),
