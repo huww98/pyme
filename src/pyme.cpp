@@ -78,11 +78,14 @@ class me_method {
 
     template<typename TBlock>
     void for_each_block(const py::buffer_info &cur_info, const py::buffer_info &mv_info, TBlock block) {
+        constexpr auto B = static_cast<std::ptrdiff_t>(BLOCK_SIZE);
         char *p_mv_0 = static_cast<char *>(mv_info.ptr);
-        for (std::size_t i = 0; i <= cur_info.shape[0] - BLOCK_SIZE; i += BLOCK_SIZE) {
+        for (std::ptrdiff_t i = 0; i <= cur_info.shape[0] - B; i += B) {
             auto p_mv_1 = p_mv_0;
-            for (std::size_t j = 0; j <= cur_info.shape[1] - BLOCK_SIZE; j += BLOCK_SIZE) {
-                block(i, j, reinterpret_cast<int *>(p_mv_1));
+            for (std::ptrdiff_t j = 0; j <= cur_info.shape[1] - B; j += B) {
+                auto p_mv = reinterpret_cast<int *>(p_mv_1);
+                p_mv[0] = p_mv[1] = -1;
+                block(i, j, p_mv);
 
                 p_mv_1 += mv_info.strides[1];
             }
@@ -98,6 +101,25 @@ class me_method {
         return sad;
     }
 
+    bool p_ref_vaild(std::ptrdiff_t x, std::ptrdiff_t y) {
+        return x >= 0 && y >= 0 &&
+            x < ref_shape()[0] && y < ref_shape()[1];
+    }
+
+    std::array<std::ptrdiff_t, 2> ref_max_cmp() {
+        constexpr auto B = static_cast<std::ptrdiff_t>(BLOCK_SIZE);
+        return {
+            this->ref_shape()[0] - B + 1,
+            this->ref_shape()[1] - B + 1,
+        };
+    }
+
+    bool p_ref_vaild_cmp(std::ptrdiff_t x, std::ptrdiff_t y) {
+        auto m = ref_max_cmp();
+        return x >= 0 && y >= 0 &&
+            x < m[0] && y < m[1];
+    }
+
     TPixel *p_ref(std::size_t x, std::size_t y) {
         return ref_data + x * ref_linesize + y;
     }
@@ -105,11 +127,11 @@ class me_method {
   private:
     py::buffer ref_frame;
     TPixel *ref_data;
-    std::array<std::size_t, 2> _ref_shape;
-    std::size_t ref_linesize;
+    std::array<std::ptrdiff_t, 2> _ref_shape;
+    std::ptrdiff_t ref_linesize;
 
   public:
-    const std::array<std::size_t, 2> &ref_shape() { return _ref_shape; }
+    const std::array<std::ptrdiff_t, 2> &ref_shape() { return _ref_shape; }
     std::array<std::size_t, 2> num_blocks(py::buffer f) {
         return this->num_blocks(f.request());
     }
@@ -120,7 +142,8 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
     using base = me_method<TPixel, BLOCK_SIZE>;
 
   public:
-    esa(py::buffer ref_frame, std::size_t search_range): base(ref_frame), search_range(search_range) {
+    esa(py::buffer ref_frame, std::size_t search_range, std::array<std::ptrdiff_t, 2> ref_offset)
+        : base(ref_frame), search_range(search_range), ref_offset(ref_offset) {
     }
 
     void estimate(py::buffer cur_frame, py::buffer mv) {
@@ -128,31 +151,34 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
         auto mv_info = mv.request(true);
         base::check_current_frame(cur_info, mv_info);
 
-        std::array<std::size_t, 2> max_search = {
-            this->ref_shape()[0] - BLOCK_SIZE + 1,
-            this->ref_shape()[1] - BLOCK_SIZE + 1,
-        };
-
         this->for_each_block(cur_info, mv_info, [&](std::size_t x, std::size_t y, int *p_mv) {
-            TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_info.strides[0] + y;
-            std::array<std::size_t, 2> b_min {
-                x <= this->search_range ? 0 : x - this->search_range,
-                y <= this->search_range ? 0 : y - this->search_range,
+            auto cur_linesize = cur_info.strides[0] / sizeof(TPixel);
+            TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_linesize + y;
+            std::ptrdiff_t x_ref = x + this->ref_offset[0];
+            std::ptrdiff_t y_ref = y + this->ref_offset[1];
+            auto r = static_cast<std::ptrdiff_t>(this->search_range);
+            std::array<std::ptrdiff_t, 2> b_min {
+                std::max(x_ref - r, static_cast<std::ptrdiff_t>(0)),
+                std::max(y_ref - r, static_cast<std::ptrdiff_t>(0)),
             };
-            std::array<std::size_t, 2> b_max {
-                std::min(x + this->search_range, max_search[0]),
-                std::min(y + this->search_range, max_search[1]),
+            auto max_search = this->ref_max_cmp();
+            std::array<std::ptrdiff_t, 2> b_max {
+                std::min(x_ref + r, max_search[0]),
+                std::min(y_ref + r, max_search[1]),
             };
-            uint64_t cost_min = this->cmp_sad(this->p_ref(x, y), p_cur, cur_info.strides[0]);
-            if (cost_min == 0) {
-                p_mv[0] = x;
-                p_mv[1] = y;
-                return;
+            uint64_t cost_min = std::numeric_limits<uint64_t>::max();
+            if (this->p_ref_vaild_cmp(x_ref, y_ref)) {
+                cost_min = this->cmp_sad(this->p_ref(x_ref, y_ref), p_cur, cur_linesize);
+                if (cost_min == 0) {
+                    p_mv[0] = x_ref;
+                    p_mv[1] = y_ref;
+                    return;
+                }
             }
 
-            for (std::size_t i = b_min[0]; i < b_max[0]; i++) {
-                for (std::size_t j = b_min[1]; j < b_max[1]; j++) {
-                    auto cost = this->cmp_sad(this->p_ref(i, j), p_cur, cur_info.strides[0]);
+            for (auto i = b_min[0]; i < b_max[0]; i++) {
+                for (auto j = b_min[1]; j < b_max[1]; j++) {
+                    auto cost = this->cmp_sad(this->p_ref(i, j), p_cur, cur_linesize);
                     if (cost < cost_min) {
                         cost_min = cost;
                         p_mv[0] = i;
@@ -164,6 +190,7 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
     }
   private:
     std::size_t search_range;
+    std::array<std::ptrdiff_t, 2> ref_offset;
 };
 
 }
@@ -171,7 +198,8 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
 PYBIND11_MODULE(_C, m) {
     auto py_esa = py::class_<esa<>>(m, "ESA")
         .def_readonly_static("block_size", &esa<>::block_size)
-        .def(py::init<py::buffer, std::size_t>(), py::arg("ref_frame"), py::arg("search_range"))
-        .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks))
+        .def(py::init<py::buffer, std::size_t, std::array<std::ptrdiff_t, 2>>(),
+            py::arg("ref_frame"), py::arg("search_range"), py::arg("ref_offset")=std::array<std::ptrdiff_t, 2>{0,0})
+        .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks), py::arg("frame"))
         .def("estimate", &esa<>::estimate, py::arg("cur_frame"), py::arg("mv"));
 }

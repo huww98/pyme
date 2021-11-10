@@ -6,6 +6,7 @@ __version__ = "0.0.1"
 
 ext_module = Pybind11Extension("pyme._C",
     ["src/pyme.cpp"],
+    extra_compile_args=['-Wall'],
     cxx_std=17,
 )
 

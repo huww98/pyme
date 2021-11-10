@@ -17,9 +17,16 @@ def test_zero_mv():
     zero_mv = np.mgrid[:128:me.block_size, :128:me.block_size].transpose(1, 2, 0)
     assert (mv == zero_mv).all()
 
-def test_small_img():
-    f = np.zeros((128, 128), dtype=np.uint8)
-    me = pyme.ESA(f, search_range=16)
-    mv = me.estimate(f)
-    zero_mv = np.mgrid[:128:me.block_size, :128:me.block_size].transpose(1, 2, 0)
-    assert (mv == zero_mv).all()
+def test_small_ref_img():
+    ref = np.zeros((8, 8), dtype=np.uint8)
+    me = pyme.ESA(ref, search_range=16)
+    cur = np.zeros((128, 128), dtype=np.uint8)
+    mv = me.estimate(cur)
+    assert (mv == -1).all()
+
+def test_small_cur_img():
+    ref = np.zeros((128, 128), dtype=np.uint8)
+    me = pyme.ESA(ref, search_range=16)
+    cur = np.zeros((8, 8), dtype=np.uint8)
+    mv = me.estimate(cur)
+    assert mv.shape == (0,0,2)
