@@ -6,6 +6,11 @@ import pyme
 def test_block_size():
     assert pyme.ESA.block_size == 16
 
+def test_ref_offset_prop():
+    f = np.empty((128, 128), dtype=np.uint8)
+    me = pyme.ESA(f, search_range=16, ref_offset=(8,8))
+    assert me.ref_offset == [8,8]
+
 def test_num_blocks():
     f = np.empty((128, 128), dtype=np.uint8)
     me = pyme.ESA(f, search_range=16)

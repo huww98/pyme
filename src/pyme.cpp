@@ -161,7 +161,7 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
 
   public:
     esa(py::buffer ref_frame, std::size_t search_range, std::array<std::ptrdiff_t, 2> ref_offset)
-        : base(ref_frame), search_range(search_range), ref_offset(ref_offset) {
+        : base(ref_frame), search_range(search_range), _ref_offset(ref_offset) {
     }
 
     void estimate(py::buffer cur_frame, py::buffer mv, py::buffer cost) {
@@ -173,8 +173,8 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
         this->for_each_block(cur_info, mv_info, cost_info, [&](std::size_t x, std::size_t y, int *p_mv, uint64_t &cost) {
             auto cur_linesize = cur_info.strides[0] / sizeof(TPixel);
             TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_linesize + y;
-            std::ptrdiff_t x_ref = x + this->ref_offset[0];
-            std::ptrdiff_t y_ref = y + this->ref_offset[1];
+            std::ptrdiff_t x_ref = x + this->_ref_offset[0];
+            std::ptrdiff_t y_ref = y + this->_ref_offset[1];
             auto r = static_cast<std::ptrdiff_t>(this->search_range);
             std::array<std::ptrdiff_t, 2> b_min {
                 std::max(x_ref - r, static_cast<std::ptrdiff_t>(0)),
@@ -208,7 +208,12 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
     }
   private:
     std::size_t search_range;
-    std::array<std::ptrdiff_t, 2> ref_offset;
+    std::array<std::ptrdiff_t, 2> _ref_offset;
+
+  public:
+    std::array<std::ptrdiff_t, 2> ref_offset() {
+        return _ref_offset;
+    }
 };
 
 }
@@ -216,6 +221,7 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
 PYBIND11_MODULE(_C, m) {
     auto py_esa = py::class_<esa<>>(m, "ESA")
         .def_readonly_static("block_size", &esa<>::block_size)
+        .def_property_readonly("ref_offset", &esa<>::ref_offset)
         .def(py::init<py::buffer, std::size_t, std::array<std::ptrdiff_t, 2>>(),
             py::arg("ref_frame"), py::arg("search_range"), py::arg("ref_offset")=std::array<std::ptrdiff_t, 2>{0,0})
         .def("num_blocks", static_cast<std::array<std::size_t, 2> (esa<>::*)(py::buffer)>(&esa<>::num_blocks), py::arg("frame"))
