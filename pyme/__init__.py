@@ -3,6 +3,7 @@ import numpy as np
 from . import _C
 
 class ESA(_C.ESA):
+    '''Exhaustive search algorithm'''
     def estimate(self, cur_frame, mv=None, cost=None):
         if mv is None or cost is None:
             num_blocks = self.num_blocks(cur_frame)
