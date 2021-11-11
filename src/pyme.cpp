@@ -187,11 +187,10 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
             };
             if (this->p_ref_vaild_cmp(x_ref, y_ref)) {
                 cost = this->cmp_sad(this->p_ref(x_ref, y_ref), p_cur, cur_linesize);
-                if (cost == 0) {
-                    p_mv[0] = x_ref;
-                    p_mv[1] = y_ref;
+                p_mv[0] = x_ref;
+                p_mv[1] = y_ref;
+                if (cost == 0)
                     return;
-                }
             }
 
             for (auto i = b_min[0]; i < b_max[0]; i++) {

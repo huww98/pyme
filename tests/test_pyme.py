@@ -23,6 +23,16 @@ def test_zero_mv():
     zero_mv = np.mgrid[:128:me.block_size, :128:me.block_size].transpose(1, 2, 0)
     assert (mv == zero_mv).all()
 
+def test_search_to_zero_mv():
+    ref = np.zeros((32, 32), dtype=np.uint8)
+    ref[1, 3] = 222
+    me = pyme.ESA(ref, search_range=16)
+
+    cur = np.zeros((16, 16), dtype=np.uint8)
+    cur[1, 3] = 199
+    mv, cost = me.estimate(cur)
+    assert (mv == 0).all()
+
 def test_me():
     ref = np.zeros((32, 32), dtype=np.uint8)
     ref[6,7] = 164
