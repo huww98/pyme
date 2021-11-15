@@ -10,6 +10,6 @@ class ESA(_C.ESA):
             if mv is None:
                 mv = np.empty(num_blocks + [2], dtype=np.int32)
             if cost is None:
-                cost = np.empty(num_blocks, dtype='=Q')
+                cost = np.empty(num_blocks, dtype=np.uint32)
         super().estimate(cur_frame, mv, cost)
         return mv, cost

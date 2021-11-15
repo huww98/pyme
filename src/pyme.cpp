@@ -10,6 +10,8 @@ namespace py = pybind11;
 
 namespace {
 
+using cost_t = std::uint32_t;
+
 template<typename TPixel=std::uint8_t, std::size_t BLOCK_SIZE=16>
 class me_method {
   public:
@@ -84,7 +86,7 @@ class me_method {
                   "but got (" << cost_info.shape[0] << ", " << cost_info.shape[1] << ")";
             throw std::runtime_error(ss.str());
         }
-        auto cost_format = py::format_descriptor<uint64_t>::format();
+        auto cost_format = py::format_descriptor<cost_t>::format();
         if (cost_info.format != cost_format) {
             throw std::runtime_error("cost should have format " + cost_format);
         }
@@ -100,9 +102,9 @@ class me_method {
             auto p_cost_1 = p_cost_0;
             for (std::ptrdiff_t j = 0; j <= cur_info.shape[1] - B; j += B) {
                 auto p_mv = reinterpret_cast<int *>(p_mv_1);
-                auto p_cost = reinterpret_cast<uint64_t *>(p_cost_1);
+                auto p_cost = reinterpret_cast<cost_t *>(p_cost_1);
                 p_mv[0] = p_mv[1] = -1;
-                *p_cost = std::numeric_limits<uint64_t>::max();
+                *p_cost = std::numeric_limits<cost_t>::max();
                 block(i, j, p_mv, *p_cost);
 
                 p_mv_1 += mv_info.strides[1];
@@ -113,7 +115,7 @@ class me_method {
         }
     }
 
-    std::uint64_t cmp_sad(TPixel *p_ref, TPixel *p_cur, std::size_t cur_linesize) {
+    cost_t cmp_sad(TPixel *p_ref, TPixel *p_cur, std::size_t cur_linesize) {
         uint64_t sad = 0;
         for (std::size_t i = 0; i < BLOCK_SIZE; i++)
             for (std::size_t j = 0; j < BLOCK_SIZE; j++)
@@ -170,7 +172,7 @@ class esa : public me_method<TPixel, BLOCK_SIZE> {
         auto cost_info = cost.request(true);
         base::check_current_frame(cur_info, mv_info, cost_info);
 
-        this->for_each_block(cur_info, mv_info, cost_info, [&](std::size_t x, std::size_t y, int *p_mv, uint64_t &cost) {
+        this->for_each_block(cur_info, mv_info, cost_info, [&](std::size_t x, std::size_t y, int *p_mv, cost_t &cost) {
             auto cur_linesize = cur_info.strides[0] / sizeof(TPixel);
             TPixel *p_cur = static_cast<TPixel *>(cur_info.ptr) + x * cur_linesize + y;
             std::ptrdiff_t x_ref = x + this->_ref_offset[0];
